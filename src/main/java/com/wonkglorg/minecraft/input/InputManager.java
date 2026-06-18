@@ -15,7 +15,7 @@ import java.util.UUID;
 public class InputManager{
 	private static InputManager manager;
 	
-	private static final EnumMap<RequestType, Map<UUID, InputRequest<?, ?>>> activeInputRequests = new EnumMap<>(RequestType.class);
+	private static final EnumMap<RequestType, Map<UUID, InputRequest<?, ?, ?>>> activeInputRequests = new EnumMap<>(RequestType.class);
 	
 	static {
 		for(var request : RequestType.values()){
@@ -41,16 +41,20 @@ public class InputManager{
 		return manager;
 	}
 	
-	public void registerInputRequest(InputRequest<?, ?> request) {
+	public void registerInputRequest(InputRequest<?, ?, ?> request) {
 		activeInputRequests.get(request.getRequestType()).put(request.getPlayerUuid(), request);
 	}
 	
-	public void unRegisterInputRequest(InputRequest<?, ?> request) {
+	public void unRegisterInputRequest(InputRequest<?, ?, ?> request) {
 		activeInputRequests.get(request.getRequestType()).remove(request.getPlayerUuid());
 	}
 	
 	public boolean hasActiveRequests(RequestType type) {
 		return !activeInputRequests.get(type).isEmpty();
+	}
+	
+	public InputRequest<?, ?, ?> getRequest(RequestType type, UUID user) {
+		return activeInputRequests.get(type).get(user);
 	}
 	
 }

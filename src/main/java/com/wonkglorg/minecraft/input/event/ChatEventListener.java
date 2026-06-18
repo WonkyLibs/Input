@@ -1,8 +1,10 @@
 package com.wonkglorg.minecraft.input.event;
 
 import com.wonkglorg.minecraft.input.InputManager;
+import com.wonkglorg.minecraft.input.request.RequestType;
+import com.wonkglorg.minecraft.input.request.type.ChatInputRequest;
 import io.papermc.paper.event.player.AsyncChatEvent;
-import net.kyori.adventure.text.Component;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 
@@ -16,24 +18,17 @@ public class ChatEventListener implements Listener{
 	
 	@EventHandler
 	public void onChatMessage(AsyncChatEvent e) {
-		if(!inputManager.hasOutstandingChatRequests()){
+		if(!inputManager.hasActiveRequests(RequestType.CHAT)){
 			return;
 		}
 		
-		var request = inputManager.getOutstandingChatRequest(e.getPlayer().getUniqueId());
+		Player player = e.getPlayer();
+		var request = (ChatInputRequest<?>) inputManager.getRequest(RequestType.CHAT, player.getUniqueId());
 		
 		if(request == null){
 			return;
 		}
 		
-		e.setCancelled(true);
-		
-		Component message = e.message();
-		try{
-			request.parse(message);
-		} catch(Exception ex){
-			request.incrementFailedAttempts();
-			request.validate();
-		}
+		request.handleEvent(e);
 	}
 }
