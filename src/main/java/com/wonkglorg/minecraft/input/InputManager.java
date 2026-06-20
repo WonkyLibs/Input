@@ -5,6 +5,7 @@ import com.wonkglorg.minecraft.input.event.ItemEventListener;
 import com.wonkglorg.minecraft.input.request.InputRequest;
 import com.wonkglorg.minecraft.input.request.RequestType;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
 import java.util.EnumMap;
@@ -26,6 +27,13 @@ public class InputManager{
 	public InputManager(Plugin plugin) {
 		Bukkit.getServer().getPluginManager().registerEvents(new ChatEventListener(this), plugin);
 		Bukkit.getServer().getPluginManager().registerEvents(new ItemEventListener(this), plugin);
+		plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, s -> {
+			for(var type : activeInputRequests.values()){
+				for(var entries : type.entrySet()){
+					entries.getValue().validateTimeOut();
+				}
+			}
+		}, 100, 20);
 	}
 	
 	public static void createInstance(Plugin plugin) {
@@ -47,6 +55,19 @@ public class InputManager{
 	
 	public void unRegisterInputRequest(InputRequest<?, ?, ?> request) {
 		activeInputRequests.get(request.getRequestType()).remove(request.getPlayerUuid());
+	}
+	
+	public void unRegisterInputRequestOnPlayerDisconnect(Player player) {
+		for(var type : activeInputRequests.values()){
+			for(var entries : type.entrySet()){
+				var value = entries.getValue();
+				if(value.isPersistOnDisconnect()){
+					continue;
+				}
+				
+				((InputRequest<?, ?, ?>) value).validateTimeOut();
+			}
+		}
 	}
 	
 	public boolean hasActiveRequests(RequestType type) {

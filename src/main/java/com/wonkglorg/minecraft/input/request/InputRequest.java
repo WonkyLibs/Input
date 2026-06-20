@@ -2,10 +2,13 @@ package com.wonkglorg.minecraft.input.request;
 
 import com.wonkglorg.minecraft.input.InputManager;
 import lombok.Getter;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
+import org.jetbrains.annotations.ApiStatus.Internal;
 
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
@@ -20,12 +23,12 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	protected boolean cancelEventOnWrongInput = true;
 	@Getter
 	protected final UUID playerUuid;
-	private long startTime;
+	private LocalDateTime startTime;
 	
 	@Getter
 	protected Duration timeoutDuration = Duration.ofSeconds(30);
 	protected BiPredicate<Player, T> filter;
-	protected Consumer<Player> failure;
+	protected BiConsumer<FailureReason, Player> failure;
 	protected BiConsumer<Player, T> success;
 	protected BiConsumer<Player, T> filterDeny;
 	protected Consumer<Player> parseFailure;
@@ -89,7 +92,7 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	 * @param failure
 	 * @return
 	 */
-	public R onFailure(Consumer<Player> failure) {
+	public R onFailure(BiConsumer<FailureReason, Player> failure) {
 		this.failure = failure;
 		return (R) this;
 	}
@@ -103,7 +106,7 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	}
 	
 	public void request() {
-		startTime = System.currentTimeMillis();
+		startTime = LocalDateTime.now();
 		InputManager.getInstance().registerInputRequest(this);
 	}
 	
@@ -111,7 +114,11 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		InputManager.getInstance().unRegisterInputRequest(this);
 	}
 	
-	public abstract void handleEvent(E event);
+	/**
+	 * Do not call this manually! this gets called by the library itself when handling inputs
+	 */
+	@Internal
+	protected abstract void handleEvent(E event);
 	
 	protected boolean filter(Player player, T value) {
 		if(filter == null){
@@ -126,10 +133,6 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		}
 	}
 	
-	protected void submitFailure(FailureReason reason, Player player) {
-	
-	}
-	
 	protected void submitSuccess(Player player, T value) {
 		if(success != null){
 			success.accept(player, value);
@@ -137,15 +140,46 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		InputManager.getInstance().unRegisterInputRequest(this);
 	}
 	
+	protected void validateTimeout() {
+		if(timeoutDuration == null){
+			return;
+		}
+		
+		if(LocalDateTime.now().isAfter(startTime.plus(timeoutDuration))){
+			submitTimeout();
+		}
+	}
+	
+	
+	
+	protected void validatePlayerLeave() {
+		if(timeoutDuration == null){
+			return;
+		}
+		
+		if(LocalDateTime.now().isAfter(startTime.plus(timeoutDuration))){
+			submitTimeout();
+		}
+	}
+	
 	/**
-	 * If
 	 *
+	 * @param reason the reason for the failure
 	 * @param player
 	 */
-	protected void submitFailure(Player player) {
+	protected void submitFailure(FailureReason reason, Player player) {
 		if(failure != null){
-			failure.accept(player);
+			failure.accept(reason, player);
 		}
+		InputManager.getInstance().unRegisterInputRequest(this);
+	}
+	
+	protected void submitTimeout() {
+		Player player = Bukkit.getPlayer(playerUuid);
+		if(timeout != null){
+			timeout.accept(player);
+		}
+		submitFailure(FailureReason.TIMEOUT, player);
 	}
 	
 	protected void submitFilterDeny(Player player, T value) {
