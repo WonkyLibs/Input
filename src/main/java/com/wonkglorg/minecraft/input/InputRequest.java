@@ -2,13 +2,13 @@ package com.wonkglorg.minecraft.input;
 
 import com.wonkglorg.minecraft.input.request.FailureReason;
 import com.wonkglorg.minecraft.input.request.RequestType;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import lombok.Getter;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.plugin.Plugin;
-import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.ApiStatus.Internal;
 
 import java.time.Duration;
@@ -26,7 +26,7 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	protected boolean cancelEventOnWrongInput = true;
 	@Getter
 	protected final UUID playerUuid;
-	private BukkitTask timeoutTask;
+	private ScheduledTask timeoutTask;
 	
 	@Getter
 	protected Duration timeoutDuration = Duration.ofSeconds(30);
@@ -102,8 +102,8 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	public void request() {
 		if(timeoutDuration != null){
 			Plugin plugin = InputManager.getInstance().plugin();
-			timeoutTask = Bukkit.getServer().getScheduler().runTaskLater(plugin,
-					() -> submitFailure(FailureReason.TIMEOUT, Bukkit.getPlayer(playerUuid)),
+			timeoutTask = Bukkit.getServer().getGlobalRegionScheduler().runDelayed(plugin,
+					t -> submitFailure(FailureReason.TIMEOUT, Bukkit.getPlayer(playerUuid)),
 					timeoutDuration.toSeconds() * 20);
 		}
 		InputManager.getInstance().registerInputRequest(this);
