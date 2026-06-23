@@ -2,54 +2,59 @@ package com.wonkglorg.minecraft.input.request;
 
 import com.wonkglorg.minecraft.input.InputRequest;
 import com.wonkglorg.minecraft.input.chat.parse.InputParser;
-import lombok.Getter;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Cancellable;
 import org.bukkit.event.Event;
 
 import java.util.UUID;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-@SuppressWarnings("unchecked")
+@SuppressWarnings({"unchecked", "unused"})
 public abstract class ConvertableInputRequest<T, E extends Event, R extends InputRequest<T, E, R>> extends InputRequest<T, E, R>{
 	
-	/**
-	 * How many times to reprompt till valid
-	 */
-	@Getter
-	private int maxAttempts = 1;
-	
-	private int usedAttempts = 0;
-	
 	protected InputParser<T> parser;
-	protected Consumer<Player> retryFailure;
+	
+	protected Consumer<Player> parseFailure;
 	
 	protected ConvertableInputRequest(UUID playerUuid, RequestType type, InputParser<T> parser) {
 		super(playerUuid, type);
 		this.parser = parser;
 	}
 	
-	public R maxAttempts(int attempts) {
-		maxAttempts = attempts;
-		return (R) this;
+	protected void handleInput(Cancellable event, Player player, String input) {
+		try{
+			T value = parser.parse(input);
+			if(!filter(player, value)){
+				incrementFailedAttemptsAndCheck(player);
+				submitFilterDeny(player, value);
+				if(cancelEventOnWrongInput){
+					event.setCancelled(true);
+				}
+				return;
+			}
+			
+			submitSuccess(player, value);
+			event.setCancelled(true);
+		} catch(Exception ex){
+			if(cancelEventOnWrongInput){
+				event.setCancelled(true);
+			}
+			incrementFailedAttemptsAndCheck(player);
+			submitParseFailure(player);
+		}
 	}
 	
 	/**
-	 * @param onRetryFailure whenever the player enteres a wrong value and needs to retry their attempt, in case it was the last attempt bringing them over the attempt limit calls {@link InputRequest#onFailure(BiConsumer)} instead with the reason {@link FailureReason#ATTEMPT_EXCEEDED}
+	 * @param parseFailure when the input request fails due to exceeding the expiry time
 	 */
-	public R onRetryFailure(Consumer<Player> onRetryFailure) {
-		this.retryFailure = onRetryFailure;
+	public R onParseFailure(Consumer<Player> parseFailure) {
+		this.parseFailure = parseFailure;
 		return (R) this;
 	}
 	
-	protected void incrementFailedAttemptsAndCheck(Player player) {
-		usedAttempts++;
-		if(usedAttempts >= maxAttempts){
-			submitFailure(FailureReason.ATTEMPT_EXCEEDED, player);
-			return;
-		}
-		if(retryFailure != null){
-			retryFailure.accept(player);
+	protected void submitParseFailure(Player player) {
+		if(parseFailure != null){
+			parseFailure.accept(player);
 		}
 	}
 }

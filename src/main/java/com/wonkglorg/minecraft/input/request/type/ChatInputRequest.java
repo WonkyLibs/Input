@@ -19,26 +19,6 @@ public class ChatInputRequest<T> extends ConvertableInputRequest<T, AsyncChatEve
 	public void handleEvent(AsyncChatEvent e) {
 		String message = PlainTextComponentSerializer.plainText().serialize(e.message());
 		Player player = e.getPlayer();
-		try{
-			T value = parser.parse(message);
-			
-			if(!filter(player, value)){
-				incrementFailedAttemptsAndCheck(player);
-				submitFilterDeny(player, value);
-				if(cancelEventOnWrongInput){
-					e.setCancelled(true);
-				}
-				return;
-			}
-			
-			submitSuccess(player, value);
-			e.setCancelled(true);
-		} catch(Exception ex){
-			if(cancelEventOnWrongInput){
-				e.setCancelled(true);
-			}
-			incrementFailedAttemptsAndCheck(player);
-			submitParseFailure(player);
-		}
+		handleInput(e, player, message);
 	}
 }

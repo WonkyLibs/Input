@@ -7,6 +7,7 @@ import lombok.Getter;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Cancellable;
 import org.bukkit.event.Event;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.ApiStatus.Internal;
@@ -24,6 +25,15 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	@Getter
 	private boolean persistOnDisconnect = false;
 	protected boolean cancelEventOnWrongInput = true;
+	
+	/**
+	 * How many times to reprompt till valid
+	 */
+	@Getter
+	private int maxAttempts = 1;
+	
+	private int usedAttempts = 0;
+	
 	@Getter
 	protected final UUID playerUuid;
 	private ScheduledTask timeoutTask;
@@ -34,7 +44,7 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	protected BiConsumer<FailureReason, Player> failure;
 	protected BiConsumer<Player, T> success;
 	protected BiConsumer<Player, T> filterDeny;
-	protected Consumer<Player> parseFailure;
+	protected Consumer<Player> retryFailure;
 	
 	protected InputRequest(UUID playerUuid, RequestType type) {
 		this.playerUuid = playerUuid;
@@ -62,16 +72,13 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		return (R) this;
 	}
 	
-	public R filter(BiPredicate<Player, T> filter) {
-		this.filter = filter;
+	public R maxAttempts(int attempts) {
+		maxAttempts = attempts;
 		return (R) this;
 	}
 	
-	/**
-	 * @param parseFailure when the input request fails due to exceeding the expiry time
-	 */
-	public R onParseFailure(Consumer<Player> parseFailure) {
-		this.parseFailure = parseFailure;
+	public R filter(BiPredicate<Player, T> filter) {
+		this.filter = filter;
 		return (R) this;
 	}
 	
@@ -88,6 +95,14 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	 */
 	public R onFailure(BiConsumer<FailureReason, Player> failure) {
 		this.failure = failure;
+		return (R) this;
+	}
+	
+	/**
+	 * @param onRetryFailure whenever the player enteres a wrong value and needs to retry their attempt, in case it was the last attempt bringing them over the attempt limit calls {@link InputRequest#onFailure(BiConsumer)} instead with the reason {@link FailureReason#ATTEMPT_EXCEEDED}
+	 */
+	public R onRetryFailure(Consumer<Player> onRetryFailure) {
+		this.retryFailure = onRetryFailure;
 		return (R) this;
 	}
 	
@@ -139,12 +154,6 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		return filter.test(player, value);
 	}
 	
-	protected void submitParseFailure(Player player) {
-		if(parseFailure != null){
-			parseFailure.accept(player);
-		}
-	}
-	
 	protected void submitFilterDeny(Player player, T value) {
 		if(filterDeny != null){
 			filterDeny.accept(player, value);
@@ -168,6 +177,38 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 			success.accept(player, value);
 		}
 		InputManager.getInstance().unRegisterInputRequest(this);
+	}
+	
+	protected void incrementFailedAttemptsAndCheck(Player player) {
+		usedAttempts++;
+		if(usedAttempts >= maxAttempts){
+			submitFailure(FailureReason.ATTEMPT_EXCEEDED, player);
+			return;
+		}
+		if(retryFailure != null){
+			retryFailure.accept(player);
+		}
+	}
+	
+	protected void handleInput(Cancellable event, Player player, T value) {
+		try{
+			if(!filter(player, value)){
+				incrementFailedAttemptsAndCheck(player);
+				submitFilterDeny(player, value);
+				if(cancelEventOnWrongInput){
+					event.setCancelled(true);
+				}
+				return;
+			}
+			
+			submitSuccess(player, value);
+			event.setCancelled(true);
+		} catch(Exception ex){
+			if(cancelEventOnWrongInput){
+				event.setCancelled(true);
+			}
+			incrementFailedAttemptsAndCheck(player);
+		}
 	}
 	
 	public Player getPlayer() {

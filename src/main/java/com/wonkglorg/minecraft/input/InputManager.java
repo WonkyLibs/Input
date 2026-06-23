@@ -1,8 +1,8 @@
 package com.wonkglorg.minecraft.input;
 
 import com.wonkglorg.minecraft.input.event.ChatEventListener;
+import com.wonkglorg.minecraft.input.event.EntityEventListener;
 import com.wonkglorg.minecraft.input.event.ItemEventListener;
-import com.wonkglorg.minecraft.input.request.FailureReason;
 import com.wonkglorg.minecraft.input.request.RequestType;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -26,6 +26,7 @@ public record InputManager(Plugin plugin){
 	public InputManager {
 		Bukkit.getServer().getPluginManager().registerEvents(new ChatEventListener(this), plugin);
 		Bukkit.getServer().getPluginManager().registerEvents(new ItemEventListener(this), plugin);
+		Bukkit.getServer().getPluginManager().registerEvents(new EntityEventListener(this), plugin);
 	}
 	
 	public static void createInstance(Plugin plugin) {
