@@ -1,5 +1,6 @@
 package com.wonkglorg.minecraft.input.request;
 
+import com.wonkglorg.minecraft.input.InputRequest;
 import com.wonkglorg.minecraft.input.chat.parse.InputParser;
 import lombok.Getter;
 import org.bukkit.entity.Player;

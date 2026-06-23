@@ -2,7 +2,7 @@ package com.wonkglorg.minecraft.input;
 
 import com.wonkglorg.minecraft.input.event.ChatEventListener;
 import com.wonkglorg.minecraft.input.event.ItemEventListener;
-import com.wonkglorg.minecraft.input.request.InputRequest;
+import com.wonkglorg.minecraft.input.request.FailureReason;
 import com.wonkglorg.minecraft.input.request.RequestType;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -13,9 +13,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-public class InputManager{
+public record InputManager(Plugin plugin){
 	private static InputManager manager;
-	
 	private static final EnumMap<RequestType, Map<UUID, InputRequest<?, ?, ?>>> activeInputRequests = new EnumMap<>(RequestType.class);
 	
 	static {
@@ -24,16 +23,9 @@ public class InputManager{
 		}
 	}
 	
-	public InputManager(Plugin plugin) {
+	public InputManager {
 		Bukkit.getServer().getPluginManager().registerEvents(new ChatEventListener(this), plugin);
 		Bukkit.getServer().getPluginManager().registerEvents(new ItemEventListener(this), plugin);
-		plugin.getServer().getGlobalRegionScheduler().runAtFixedRate(plugin, s -> {
-			for(var type : activeInputRequests.values()){
-				for(var entries : type.entrySet()){
-					entries.getValue().validateTimeOut();
-				}
-			}
-		}, 100, 20);
 	}
 	
 	public static void createInstance(Plugin plugin) {
@@ -50,23 +42,42 @@ public class InputManager{
 	}
 	
 	public void registerInputRequest(InputRequest<?, ?, ?> request) {
+		Map<UUID, InputRequest<?, ?, ?>> requests = activeInputRequests.get(request.getRequestType());
+		
+		if(requests.containsKey(request.getPlayerUuid())){
+			throw new IllegalStateException("Player already has an active request of type " + request.getRequestType());
+		}
+		
 		activeInputRequests.get(request.getRequestType()).put(request.getPlayerUuid(), request);
 	}
 	
+	/**
+	 * Unregisters an input request
+	 *
+	 * @param request
+	 */
 	public void unRegisterInputRequest(InputRequest<?, ?, ?> request) {
+		request.cancelTimeoutTask();
+		activeInputRequests.get(request.getRequestType()).remove(request.getPlayerUuid());
+	}
+	
+	/**
+	 * Unregisters an input request forcefully, should only be used if not done via internal InputRequests
+	 */
+	public void forceUnRegisterInputRequest(InputRequest<?, ?, ?> request) {
+		request.submitForceCancel();
+		request.cancelTimeoutTask();
 		activeInputRequests.get(request.getRequestType()).remove(request.getPlayerUuid());
 	}
 	
 	public void unRegisterInputRequestOnPlayerDisconnect(Player player) {
 		for(var type : activeInputRequests.values()){
-			for(var entries : type.entrySet()){
-				var value = entries.getValue();
-				if(value.isPersistOnDisconnect()){
-					continue;
-				}
-				
-				((InputRequest<?, ?, ?>) value).validateTimeOut();
+			var value = type.get(player.getUniqueId());
+			if(value == null || value.isPersistOnDisconnect()){
+				continue;
 			}
+			
+			value.submitDisconnect(player);
 		}
 	}
 	

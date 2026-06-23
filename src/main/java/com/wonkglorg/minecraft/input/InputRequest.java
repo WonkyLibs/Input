@@ -1,20 +1,23 @@
-package com.wonkglorg.minecraft.input.request;
+package com.wonkglorg.minecraft.input;
 
-import com.wonkglorg.minecraft.input.InputManager;
+import com.wonkglorg.minecraft.input.request.FailureReason;
+import com.wonkglorg.minecraft.input.request.RequestType;
 import lombok.Getter;
 import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.jetbrains.annotations.ApiStatus.Internal;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.function.BiConsumer;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 
-@SuppressWarnings("unchecked")
+@SuppressWarnings({"unchecked", "unused"})
 public abstract class InputRequest<T, E extends Event, R extends InputRequest<T, E, ?>>{
 	@Getter
 	private final RequestType requestType;
@@ -23,7 +26,7 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	protected boolean cancelEventOnWrongInput = true;
 	@Getter
 	protected final UUID playerUuid;
-	private LocalDateTime startTime;
+	private BukkitTask timeoutTask;
 	
 	@Getter
 	protected Duration timeoutDuration = Duration.ofSeconds(30);
@@ -32,7 +35,6 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	protected BiConsumer<Player, T> success;
 	protected BiConsumer<Player, T> filterDeny;
 	protected Consumer<Player> parseFailure;
-	protected Consumer<Player> timeout;
 	
 	protected InputRequest(UUID playerUuid, RequestType type) {
 		this.playerUuid = playerUuid;
@@ -62,14 +64,6 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	
 	public R filter(BiPredicate<Player, T> filter) {
 		this.filter = filter;
-		return (R) this;
-	}
-	
-	/**
-	 * @param timeout when the input request fails due to exceeding the expiry time
-	 */
-	public R onTimeout(Consumer<Player> timeout) {
-		this.timeout = timeout;
 		return (R) this;
 	}
 	
@@ -106,12 +100,30 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 	}
 	
 	public void request() {
-		startTime = LocalDateTime.now();
+		if(timeoutDuration != null){
+			Plugin plugin = InputManager.getInstance().plugin();
+			timeoutTask = Bukkit.getServer().getScheduler().runTaskLater(plugin,
+					() -> submitFailure(FailureReason.TIMEOUT, Bukkit.getPlayer(playerUuid)),
+					timeoutDuration.toSeconds() * 20);
+		}
 		InputManager.getInstance().registerInputRequest(this);
 	}
 	
-	public void cancel() {
-		InputManager.getInstance().unRegisterInputRequest(this);
+	/**
+	 * Cancels the current timeout task
+	 */
+	void cancelTimeoutTask() {
+		if(timeoutTask != null && !timeoutTask.isCancelled()){
+			timeoutTask.cancel();
+		}
+	}
+	
+	void submitDisconnect(Player player) {
+		submitFailure(FailureReason.PLAYER_DISCONNECT, player);
+	}
+	
+	void submitForceCancel() {
+		submitFailure(FailureReason.FORCE_CANCELLED, getPlayer());
 	}
 	
 	/**
@@ -133,32 +145,9 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		}
 	}
 	
-	protected void submitSuccess(Player player, T value) {
-		if(success != null){
-			success.accept(player, value);
-		}
-		InputManager.getInstance().unRegisterInputRequest(this);
-	}
-	
-	protected void validateTimeout() {
-		if(timeoutDuration == null){
-			return;
-		}
-		
-		if(LocalDateTime.now().isAfter(startTime.plus(timeoutDuration))){
-			submitTimeout();
-		}
-	}
-	
-	
-	
-	protected void validatePlayerLeave() {
-		if(timeoutDuration == null){
-			return;
-		}
-		
-		if(LocalDateTime.now().isAfter(startTime.plus(timeoutDuration))){
-			submitTimeout();
+	protected void submitFilterDeny(Player player, T value) {
+		if(filterDeny != null){
+			filterDeny.accept(player, value);
 		}
 	}
 	
@@ -174,17 +163,18 @@ public abstract class InputRequest<T, E extends Event, R extends InputRequest<T,
 		InputManager.getInstance().unRegisterInputRequest(this);
 	}
 	
-	protected void submitTimeout() {
-		Player player = Bukkit.getPlayer(playerUuid);
-		if(timeout != null){
-			timeout.accept(player);
+	protected void submitSuccess(Player player, T value) {
+		if(success != null){
+			success.accept(player, value);
 		}
-		submitFailure(FailureReason.TIMEOUT, player);
+		InputManager.getInstance().unRegisterInputRequest(this);
 	}
 	
-	protected void submitFilterDeny(Player player, T value) {
-		if(filterDeny != null){
-			filterDeny.accept(player, value);
-		}
+	public Player getPlayer() {
+		return Bukkit.getPlayer(playerUuid);
+	}
+	
+	public OfflinePlayer getOfflinePlayer() {
+		return Bukkit.getOfflinePlayer(playerUuid);
 	}
 }

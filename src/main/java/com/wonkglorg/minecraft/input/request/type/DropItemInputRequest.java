@@ -1,6 +1,6 @@
 package com.wonkglorg.minecraft.input.request.type;
 
-import com.wonkglorg.minecraft.input.request.InputRequest;
+import com.wonkglorg.minecraft.input.InputRequest;
 import com.wonkglorg.minecraft.input.request.RequestType;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.inventory.ItemStack;
